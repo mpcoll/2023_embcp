@@ -1,0 +1,7 @@
+data/*
+docs/*
+.vscode/*
+code/EBMCP data scripts/*
+code/EBMCP event markers/*
+code/EBMCP protocol/*
+code/task/*
