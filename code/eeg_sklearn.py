@@ -43,7 +43,11 @@ import os
 
 faulthandler.enable()
 
-bidsout = '/Users/mp/data/2023_embcp'
+ccanada = 1
+if ccanada:
+    bidsout = '/lustre04/scratch/mpcoll/2023_embcp'
+else:
+    bidsout = '/Users/mp/data/2023_embcp'
 derivpath = opj(bidsout, 'derivatives')
 if not os.path.exists(opj(derivpath, 'machinelearning')):
     os.mkdir(opj(derivpath, 'machinelearning'))
@@ -55,48 +59,33 @@ mne.set_log_level('WARNING')
 ####################################################
 # Load data
 ####################################################
-
+print('Loading data...')
 dataset = mne.read_epochs(opj(derivpath, 'all_epochs-epo.fif'))
-
-# preds = np.zeros(len(labels))
-
-# for train_idx, test_idx in cv.split(epochs_data):
-#     y_train, y_test = labels[train_idx], labels[test_idx]
-
-#     clf.fit(epochs_data[train_idx], y_train)
-#     preds[test_idx] = clf.predict(epochs_data[test_idx])
-
-# # Printing the results
-# acc = np.mean(preds == labels)
-# print("Classification accuracy: %f " % (acc))
-
-# names = ["audio left", "audio right", "vis left", "vis right"]
-# cm = confusion_matrix(labels, preds)
-# ConfusionMatrixDisplay(cm, display_labels=names).plot()
-# plt.show()
-
-
-# Standardize channel wise with MNE
-
-
-# Vectorize data
-
-
-# SK learn
 
 
 ####################################################
 # set up model and parameters
 ####################################################
 
-# Device
+# Check if GPUs
 cuda = torch.cuda.is_available()
-device = 'cuda' if cuda else 'cpu'
-# For macbook M1
+if ccanada:
+    assert cuda
+
+
+if cuda:  # If GPU
+    device = 'cuda'
+    n_gpus = torch.cuda.device_count()
+    print('Using ' + str(n_gpus) + ' GPUs')
+else:
+    device = 'cpu'
+
+# For macbook M1, use MPS backend
 if torch.backends.mps.is_available():
     print("Using MPS")
     device = 'mps'
 
+# Set seed
 seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
@@ -151,7 +140,9 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 input_window_samples=input_window_samples,
                 final_conv_length='auto',
             )
-
+        # If multiple GPUs, split
+        if n_gpus > 1:
+            model = torch.nn.DataParallel(model)
         if n_classes == 1:  # If regression
             # Remove softmax layer
             new_model = torch.nn.Sequential()
@@ -509,6 +500,46 @@ all_accuracies = pd.DataFrame(
 
 # plt.title('between - 5 tasks classification')
 # plt.show()
+
+
+# ####################################################
+# # Between classification for thermal vs auditory
+# ####################################################
+
+# Keep only task with 4 active tasks
+keep = [True if e in ['thermalrate', 'thermal',
+                      'auditory', 'auditoryrate']
+        else False for e in dataset.metadata['task']]
+
+dataset_class = dataset[keep]
+
+targets = np.array([0 if 'thermal' in l else 1 for l in
+                    dataset_class.metadata['task'].values])
+
+
+n_classes = len(np.unique(targets))
+
+print(np.unique(targets))
+
+participant_id = dataset_class.metadata['participant_id'].values
+clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True)
+
+fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
+                                                  y=targets,
+                                                  participant_id=participant_id,
+                                                  clf=clf,
+                                                  n_splits=10,
+                                                  n_classes=n_classes,
+                                                  n_epochs=20)
+
+# Make confusion matrix
+confusion_mat = confusion_matrix(y_train, y_pred)
+
+plot_confusion_matrix(confusion_mat, figsize=(10, 10),
+                      class_names=le.classes_)
+plt.tick_params(axis='x', rotation=90)
+plt.tick_params(axis='y', rotation=0)
+plt.show()
 
 
 # ####################################################

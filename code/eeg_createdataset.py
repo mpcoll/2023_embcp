@@ -12,21 +12,26 @@ from scipy import signal, stats
 from scipy.signal import savgol_filter
 from autoreject import AutoReject
 import multiprocessing
+from tqdm import tqdm
 
 njobs = multiprocessing.cpu_count()
-
+print(njobs)
 
 ###############################
 # Parameters
 ###############################
-bidsout = '/Users/mp/data/2023_embcp'
+ccanada = 1
+if ccanada:
+    bidsout = '/lustre04/scratch/mpcoll/2023_embcp'
+else:
+    bidsout = '/Users/mp/data/2023_embcp'
 derivpath = opj(bidsout, 'derivatives')
 
 
 part = [s for s in os.listdir(derivpath) if 'sub' in s]
 
 all_epochs = []
-for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate', 'rest']:
+for task in tqdm(['auditory', 'auditoryrate', 'thermal', 'thermalrate', 'rest']):
     # Loop bands
     for p in part:
 
