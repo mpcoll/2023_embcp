@@ -20,6 +20,7 @@ import torch
 from os.path import join as opj
 import seaborn as sns
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 
 from braindecode import EEGRegressor, EEGClassifier
 from braindecode.preprocessing import exponential_moving_standardize, Preprocessor, preprocess
@@ -27,16 +28,17 @@ from braindecode.visualization import plot_confusion_matrix
 from braindecode.datasets import create_from_X_y
 from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.util import set_random_seeds
+from braindecode.augmentation import FTSurrogate, AugmentedDataLoader
 
-from skorch.callbacks import LRScheduler, EarlyStopping
+from skorch.callbacks import LRScheduler, EarlyStopping, Checkpoint
 from skorch.helper import SliceDataset, predefined_split
 from skorch.dataset import Dataset
 
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, RobustScaler
 from sklearn.metrics import (balanced_accuracy_score, mean_absolute_error,
                              confusion_matrix)
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from sklearn.model_selection import KFold, GroupKFold, LeaveOneGroupOut, GroupShuffleSplit
+from sklearn.model_selection import KFold, GroupKFold, LeaveOneGroupOut, GroupShuffleSplit, train_test_split
 from sklearn.base import clone
 import faulthandler
 from tqdm import tqdm
@@ -57,6 +59,7 @@ derivpath = opj(bidsout, 'derivatives')
 if not os.path.exists(opj(derivpath, 'machinelearning')):
     os.mkdir(opj(derivpath, 'machinelearning'))
 
+
 # Hide data loading info
 mne.set_log_level('WARNING')
 
@@ -66,7 +69,8 @@ mne.set_log_level('WARNING')
 ####################################################
 print('Loading data...')
 dataset = mne.read_epochs(opj(derivpath, 'all_epochs-epo.fif'))
-
+# print('Filtering...')
+# dataset.filter(4, 59)
 
 ####################################################
 # set up model and parameters
@@ -105,10 +109,12 @@ n_epochs = 10
 model = 'braindecode_shallow'
 
 
-def initiate_clf(model, n_classes, n_chans=n_chans,
+def initiate_clf(model_name, n_classes, n_chans=n_chans,
                  input_window_samples=input_window_samples,
                  batch_size=batch_size, device=device,
-                 braindecode=True, proportion_valid=.2):
+                 early_stop_n=15,
+                 braindecode=True, path_out='',
+                 augmentation=False):
     """_summary_
 
     Args:
@@ -124,8 +130,11 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
         _type_: _description_
     """
 
+    if not os.path.exists(path_out):
+        os.mkdir(path_out)
+
     if braindecode:
-        if model == 'braindecode_deep':
+        if model_name == 'braindecode_deep':
             lr = 0.01
             weight_decay = 0.0005
             # Model
@@ -135,7 +144,7 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 input_window_samples=input_window_samples,
                 final_conv_length='auto',
             )
-        elif model == 'braindecode_shallow':
+        elif model_name == 'braindecode_shallow':
             # Model parameters
             lr = 0.0625 * 0.01
             weight_decay = 0
@@ -149,6 +158,16 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
         # If multiple GPUs, split
         if n_gpus > 1:
             model = torch.nn.DataParallel(model)
+
+        if augmentation:
+            fts = FTSurrogate(0.5, phase_noise_magnitude=1, channel_indep=False,
+                              random_state=seed)
+            transforms = [fts]
+            iterator_train = AugmentedDataLoader
+        else:
+            transforms = None
+            iterator_train = DataLoader
+
         if n_classes == 1:  # If regression
             # Remove softmax layer
             new_model = torch.nn.Sequential()
@@ -161,42 +180,59 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
             clf_deep = EEGRegressor(
                 model,
                 optimizer=torch.optim.AdamW,
+                iterator_train=iterator_train,
+                iterator_train__transforms=transforms,
                 optimizer__lr=lr,
                 train_split=group_train_valid_split,
                 optimizer__weight_decay=weight_decay,
+                iterator_valid__shuffle=False,
+                iterator_train__shuffle=True,
                 batch_size=batch_size,
                 callbacks=[
                     "neg_root_mean_squared_error",
-                    # seems n_epochs -1 leads to desired behavior of lr=0 after end of training?
-                    ("lr_scheduler", LRScheduler(policy=ReduceLROnPlateau)),
-                    ("early_stopping", EarlyStopping(patience=10)),
+                    ("checkpoint", Checkpoint(dirname=path_out, f_criterion=None,
+                                              f_optimizer=None, f_history=None,
+                                              load_best=True)),
+                    # ("lr_scheduler", LRScheduler(policy=ReduceLROnPlateau)),
+                    ("lr_scheduler",   LRScheduler(
+                        'CosineAnnealingLR', T_max=n_epochs - 1)),
+                    ("early_stopping", EarlyStopping(patience=early_stop_n)),
                 ],
                 device=device,
             )
-            clf = Pipeline(steps=[('mnescaler', Scaler(scalings='mean')),
+            clf = Pipeline(steps=[('mnescaler', Scaler(scalings='median')),
                                   ('deeplearn', clf_deep)])
 
         else:  # If classification
             clf_deep = EEGClassifier(
                 model,
+                iterator_train=iterator_train,
+                iterator_train__transforms=transforms,
                 criterion=torch.nn.NLLLoss,
                 optimizer=torch.optim.AdamW,
                 optimizer__lr=lr,
                 train_split=None,
                 optimizer__weight_decay=weight_decay,
+                iterator_valid__shuffle=False,
+                iterator_train__shuffle=True,
                 batch_size=batch_size,
                 callbacks=[
-                    "balanced_accuracy",
-                    ("lr_scheduler", LRScheduler(policy=ReduceLROnPlateau)),
-                    ("early_stopping", EarlyStopping(patience=10)),
+                    "accuracy",
+                    ("checkpoint", Checkpoint(dirname=path_out, f_criterion=None,
+                                              f_optimizer=None, f_history=None,
+                                              load_best=True)),
+                    # ("lr_scheduler", LRScheduler(policy=ReduceLROnPlateau)),
+                    ("lr_scheduler",   LRScheduler(
+                        'CosineAnnealingLR', T_max=n_epochs - 1)),
+
                 ],
                 device=device,
             )
-            clf = Pipeline(steps=[('mnescaler', Scaler(scalings='mean')),
+            clf = Pipeline(steps=[('mnescaler', Scaler(scalings='median')),
                                   ('deeplearn', clf_deep)])
 
     else:
-        if model == 'cov_MDM':
+        if model_name == 'cov_MDM':
             # MDM covariance
             clf = make_pipeline(
                 Covariances(),
@@ -204,7 +240,7 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 MDM(metric=dict(mean='riemann', distance='riemann'))
             )
 
-        elif model == 'cov_SVM':
+        elif model_name == 'cov_SVM':
             # SVC covariance
             clf = make_pipeline(
                 Covariances(),
@@ -213,7 +249,7 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 SVC(),
             )
 
-        elif model == 'SVC':
+        elif model_name == 'SVC':
             # SVC covariance
             clf = make_pipeline(
                 Scaler(scalings='mean'),
@@ -225,68 +261,6 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
     return clf
 
 
-def KFold_train(windows_dataset, clf, n_epochs=4, n_splits=5,
-                shuffle=True, n_classes=2, random_state=42,
-                normalize=False, factor=1e6, factor_new=1e-3,
-                init_block_size=1000):
-    """_summary_
-
-    Args:
-        windows_dataset (_type_): _description_
-        clf (_type_): _description_
-        n_epochs (int, optional): _description_. Defaults to 4.
-        n_splits (int, optional): _description_. Defaults to 5.
-        shuffle (bool, optional): _description_. Defaults to True.
-        n_classes (int, optional): _description_. Defaults to 2.
-
-    Returns:
-        _type_: _description_
-    """
-
-    # Put in skorch for cross validation
-    X_train = SliceDataset(windows_dataset, idx=0)
-    y_train = np.array([y for y in SliceDataset(windows_dataset, idx=1)])
-
-    # Perform cross validation
-    kf = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
-
-    fold_accuracy = []
-    y_pred = np.asarray([99999]*len(y_train))
-    count = 0
-    for train_index, test_index in tqdm(kf.split(X_train, y_train),
-                                        total=kf.get_n_splits(), desc="k-fold"):
-        count += 1
-
-        # Copy untrained model
-        clf_fold = clone(clf)
-
-        # Get data
-        X_train_fold, X_test = X_train[train_index], X_train[test_index]
-        y_train_fold, y_test = y_train[train_index], y_train[test_index]
-
-        # Fit
-        if n_epochs != 0:
-            clf_fold.fit(X_train_fold, y=y_train_fold, epochs=n_epochs)
-            y_pred[test_index] = clf_fold.predict(X_test).flatten()
-
-        else:
-            clf_fold.fit(np.array(X_train_fold), y=y_train_fold)
-            y_pred[test_index] = clf_fold.predict(np.array(X_test)).flatten()
-
-        # Test
-
-        if n_classes == 1:
-            fold_accuracy.append(mean_absolute_error(
-                y_test, y_pred[test_index]))
-            print('fold MAE: ', fold_accuracy[-1])
-
-        else:
-            fold_accuracy.append(balanced_accuracy_score(
-                y_test, y_pred[test_index]))
-            print('fold accuracy: ', fold_accuracy[-1])
-    return fold_accuracy, y_train, y_pred
-
-
 def group_train_valid_split(X, y, groups, proportion_valid=0.2):
     splitter = GroupShuffleSplit(
         test_size=proportion_valid, n_splits=2, random_state=42)
@@ -296,7 +270,7 @@ def group_train_valid_split(X, y, groups, proportion_valid=0.2):
 
 
 def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
-                     n_classes=2, valid_prop=0.2):
+                     n_classes=2, valid_prop=0.2, scaling_factor=1e6,):
     """_summary_
 
     Args:
@@ -310,6 +284,8 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
         _type_: _description_
     """
 
+    if scaling_factor:
+        X = X*scaling_factor
     # Perform cross validation
     if n_splits == 'loo':
         kf = LeaveOneGroupOut()
@@ -367,7 +343,88 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
                 y_test, y_pred[test_index]))
             print('fold accuracy: ', fold_accuracy[-1])
 
-    return fold_accuracy, y_train, y_pred
+            valid_pred = clf_fold.predict(valid[0])
+            print(valid_pred)
+            valid_acc = balanced_accuracy_score(valid[1], valid_pred)
+            print(valid_acc)
+
+    return fold_accuracy, y, y_pred
+
+
+def Kfold_train(X, y, clf, n_epochs=4, n_splits=1,
+                n_classes=2, valid_prop=0.2, scaling_factor=1e6,
+                shuffle=True, random_state=seed):
+    """_summary_
+
+    Args:
+        windows_dataset (_type_): _description_
+        clf (_type_): _description_
+        n_epochs (int, optional): _description_. Defaults to 4.
+        n_splits (int, optional): _description_. Defaults to 1.
+        n_classes (int, optional): _description_. Defaults to 2.
+
+    Returns:
+        _type_: _description_
+    """
+
+    if scaling_factor:
+        X = X*scaling_factor
+    # Perform cross validation
+    kf = KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+
+    train_val_split = kf.split(X, y)
+
+    fold_accuracy = []
+    y_pred = np.asarray([99999]*len(y))
+
+    count = 0
+    for train_index, test_index in tqdm(train_val_split,
+                                        total=kf.get_n_splits(),
+                                        desc="k-fold"):
+        count += 1
+
+        # Copy untrained model
+        clf_fold = clone(clf)
+
+        # Split train and test
+        X_train_fold, X_test = X[train_index], X[test_index]
+        y_train_fold, y_test = y[train_index], y[test_index]
+
+        # If validation set, futrher split train set
+        if valid_prop != 0:
+            X_train_fold,  X_valid, y_train_fold, y_valid = train_test_split(X_train_fold, y_train_fold, test_size=valid_prop,
+                                                                             shuffle=True, random_state=random_state)
+
+            valid_set = Dataset(X_valid, y_valid)
+            clf_fold.set_params(
+                **{'deeplearn__train_split': predefined_split(valid_set)})
+
+        # Fit
+        if n_epochs != 0:
+            clf_fold.fit(X_train_fold, y=y_train_fold,
+                         deeplearn__epochs=n_epochs)
+            y_pred[test_index] = clf_fold.predict(X_test).flatten()
+
+        else:
+            clf_fold.fit(X_train_fold, y=y_train_fold)
+            y_pred[test_index] = clf_fold.predict(X_test).flatten()
+
+        if n_classes == 1:
+            fold_accuracy.append(mean_absolute_error(
+                y_test, y_pred[test_index]))
+            print('fold MAE: ', fold_accuracy[-1])
+
+        else:
+            fold_accuracy.append(balanced_accuracy_score(
+                y_test, y_pred[test_index]))
+            print('fold accuracy: ', fold_accuracy[-1])
+
+            # valid_pred = clf_fold.predict(valid[0])
+            # print(valid_pred)
+            # valid_acc = balanced_accuracy_score(valid[1], valid_pred)
+            # print(valid_acc)
+
+    return fold_accuracy, y, y_pred
 
 ####################################################
 
@@ -412,7 +469,7 @@ all_accuracies = pd.DataFrame(
 
 
 # ####################################################
-# # Within classification for 4 active tasks
+# # Within classification for 2 active tasks
 # ####################################################
 
 # for p in dataset.metadata['participant_id'].unique():
@@ -425,27 +482,23 @@ all_accuracies = pd.DataFrame(
 
 #     data_sub = data_sub[keep]
 
-#     data_sub.metadata['target'] = LabelEncoder().fit_transform(
+#     targets = LabelEncoder().fit_transform(
 #         list(data_sub.metadata['task'].values))
 
-#     n_classes = len(np.unique(windows_dataset.description['target']))
-#     # Initiate classifier
-#     clf_deep = initiate_clf(model, n_classes)
+#     n_classes = len(np.unique(targets))
 
-#     # Train and test
-#     fold_accuracy, y_train, y_pred = KFold_train(windows_dataset, clf,
+#     path_out = opj(derivpath, 'machinelearning', 'within_2tasks')
+
+#     clf = initiate_clf('cov_MDM', n_classes, braindecode=False,
+#                        path_out=path_out)
+
+#     fold_accuracy, y_train, y_pred = Kfold_train(X=data_sub.get_data(),
+#                                                  y=targets,
+#                                                  clf=clf,
+#                                                  n_splits=10,
+#                                                  valid_prop=0,
+#                                                  n_classes=n_classes,
 #                                                  n_epochs=0)
-
-#     fold_accuracy, y_train, y_pred = KFold_train(windows_dataset, clf_deep,
-#                                                  n_epochs=5)
-#     # Make condution matrix
-#     confusion_mat = confusion_matrix(y_train, y_pred)
-
-#     plot_confusion_matrix(confusion_mat, figsize=(10, 10))
-#     plt.title(p + ' 9 tasks classification')
-#     plt.show()
-#     all_accuracies.loc[p,
-#                        'within_classification_4-tasks'] = np.mean(fold_accuracy)
 
 
 # ####################################################
@@ -545,18 +598,20 @@ participant_id = dataset_class.metadata['participant_id'].values
 
 n_classes = len(np.unique(targets))
 
+path_out = opj(derivpath, 'machinelearning', 'between_4tasks')
 
-clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True)
 
+clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True,
+                   path_out=path_out, early_stop_n=20, augmentation=False)
 
 fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=targets,
                                                   participant_id=participant_id,
                                                   clf=clf,
-                                                  n_splits=5,
+                                                  n_splits=10,
                                                   valid_prop=0.2,
                                                   n_classes=n_classes,
-                                                  n_epochs=20)
+                                                  n_epochs=35)
 
 # Make confusion matrix
 confusion_mat = confusion_matrix(y_train, y_pred)
@@ -586,15 +641,16 @@ targets = le.fit_transform(
 
 n_classes = len(np.unique(targets))
 participant_id = dataset_class.metadata['participant_id'].values
-clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True)
+clf = initiate_clf('braindecode_shallow', n_classes,
+                   braindecode=True, early_stop=35, )
 
 fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=targets,
                                                   participant_id=participant_id,
                                                   clf=clf,
-                                                  n_splits=5,
+                                                  n_splits=2,
                                                   n_classes=n_classes,
-                                                  n_epochs=20)
+                                                  n_epochs=35)
 
 # Make confusion matrix
 confusion_mat = confusion_matrix(y_train, y_pred)
