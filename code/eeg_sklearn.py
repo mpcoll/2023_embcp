@@ -338,7 +338,7 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
         # If validation set, futrher split train set
         if valid_prop != 0:
             train, valid = group_train_valid_split(X_train_fold, y_train_fold,
-                                                   participant_id,
+                                                   participant_id[train_index],
                                                    valid_prop)
 
             X_train_fold, y_train_fold = train
