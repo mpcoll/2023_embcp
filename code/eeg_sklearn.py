@@ -341,6 +341,7 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
                                                    valid_prop)
 
             X_train_fold, y_train_fold = train
+            print(valid[0].shape)
             valid_set = Dataset(valid[0], valid[1])
             clf_fold.set_params(
                 **{'deeplearn__train_split': predefined_split(valid_set)})
