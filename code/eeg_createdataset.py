@@ -42,7 +42,7 @@ for task in tqdm(['auditory', 'auditoryrate', 'thermal', 'thermalrate', 'rest'])
         raw.resample(250)
 
         epochs = mne.make_fixed_length_epochs(
-            raw, duration=4, overlap=2).load_data()
+            raw, duration=4, overlap=0).load_data()
 
         # Drop bad epochs
         ar = AutoReject(n_interpolate=[0], n_jobs=njobs, random_state=42)
