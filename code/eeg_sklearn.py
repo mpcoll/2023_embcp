@@ -337,7 +337,8 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
 
         # If validation set, futrher split train set
         if valid_prop != 0:
-            train, valid = group_train_valid_split(X, y, participant_id,
+            train, valid = group_train_valid_split(X_train_fold, y_train_fold,
+                                                   participant_id,
                                                    valid_prop)
 
             X_train_fold, y_train_fold = train
@@ -591,7 +592,7 @@ fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=targets,
                                                   participant_id=participant_id,
                                                   clf=clf,
-                                                  n_splits=10,
+                                                  n_splits=5,
                                                   n_classes=n_classes,
                                                   n_epochs=20)
 
