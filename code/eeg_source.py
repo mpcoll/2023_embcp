@@ -169,13 +169,13 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
             betas_rate = Parallel(n_jobs=njobs,
                                   verbose=0)(delayed(regressor)(data=stc.data,
                                                                 Y=rating,
-                                                                method=LinearRegression(),
+                                                                method=HuberRegressor(),
                                                                 dipole=dipole,)
                                              for dipole in tqdm(range(stc.data.shape[0])))
 
             betas_intensity = Parallel(n_jobs=njobs, verbose=0)(delayed(regressor)(data=stc.data,
                                                                                    Y=intensity,
-                                                                                   method=LinearRegression(),
+                                                                                   method=HuberRegressor(),
                                                                                    dipole=dipole,)
                                                                 for dipole in tqdm(range(stc.data.shape[0])))
             # betas_rate2 = np.zeros(stc.data.shape[0])
@@ -198,7 +198,7 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
         np.save(opj(derivpath, 'source', 'betas_rate_' + task + '_' + name),
                 np.vstack(betas_rate_out[name]))
         np.save(opj(derivpath, 'source', 'betas_intens_' + task + '_' + name),
-                np.vstack(betas_intens_out))
+                np.vstack(betas_intens_out[name]))
 
         # T-test betas
         t_obs, _, pvals, _ = mne.stats.permutation_cluster_1samp_test(np.vstack(betas_intens_out[name]),
@@ -220,21 +220,28 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
         mne.SourceEstimate(pvals, stc.vertices, 0, 0).save(
             opj(derivpath, 'source', 'pvals_rate_' + task + '_' + name + '.fif'), overwrite=True)
 
+
+
+# TODO loop over tasks and create figures
 # # Plot betas
+# test.plot(**kwargs)
+kwargs = dict(subject='fsaverage',
+               subjects_dir=os.environ['SUBJECTS_DIR'],
+               hemi='split', smoothing_steps=4,
+               time_unit='s', initial_time=1, size=1200,
+               views=['lat', 'med'])
 
-# betas_intens_out = np.load(
-#     opj(derivpath, 'source', 'betas_rate_thermal_beta.npy'))
-# # # Plot betas
-# stct = mne.read_source_estimate(
-#     opj(derivpath, 'source', 'tvals_rate_thermalrate_beta.fif'))
+ # # Plot betas
+stct = mne.read_source_estimate(
+     opj(derivpath, 'source', 'tvals_intens_thermal_gamma.fif'))
 
-# np.max(np.abs(stct.data))
-# stcp = mne.read_source_estimate(
-#     opj(derivpath, 'source', 'pvals_intens_thermal_alpha.fif'))
+ np.max(np.abs(stct.data))
+ stcp = mne.read_source_estimate(
+     opj(derivpath, 'source', 'pvals_intens_thermal_alpha.fif'))
 
-# stct.data[stcp.data > 0.05] = 0
+ stct.data[stcp.data > 0.05] = 0
 # # # save betas / append for group analysis
-# stct.plot(**kwargs)
+ stct.plot(**kwargs)
 # test = mne.SourceEstimate(np.mean(betas_intens_out, 0).squeeze(), stc.vertices, 0, 0)
 # # # t-test betas
 # # # save t-vals
@@ -244,12 +251,7 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
 #                           subject='fsaverage')
 
 
-# test.plot(**kwargs)
-# kwargs = dict(subject='fsaverage',
-#               subjects_dir=os.environ['SUBJECTS_DIR'],
-#               hemi='split', smoothing_steps=4,
-#               time_unit='s', initial_time=1, size=1200,
-#               views=['lat', 'med'])
+
 ##################################
 # Make report
 ##################################
@@ -262,29 +264,3 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
 #     n_jobs=1,  # prevent automatic parallelization
 # )
 
-
-print(__doc__)
-
-# Paths to example data
-sample_dir_raw = sample.data_path()
-sample_dir = sample_dir_raw / 'MEG' / 'sample'
-subjects_dir = sample_dir_raw / 'subjects'
-
-fname_stc = sample_dir / 'sample_audvis-meg'
-
-stc = read_source_estimate(fname_stc, subject='sample')
-
-# Define plotting parameters
-surfer_kwargs = dict(
-    hemi='lh', subjects_dir=subjects_dir,
-    clim=dict(kind='value', lims=[8, 12, 15]), views='lateral',
-    initial_time=0.09, time_unit='s', size=(800, 800),
-    smoothing_steps=5)
-
-# Plot surface
-brain = stc.plot(**surfer_kwargs)
-
-# Add title
-brain.add_text(0.1, 0.9, 'SourceEstimate', 'title', font_size=16)
-
-mne.viz.set_3d_backend('notebook')
