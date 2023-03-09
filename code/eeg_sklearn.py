@@ -44,11 +44,14 @@ import os
 
 faulthandler.enable()
 
-ccanada = 0
-if ccanada:
+# Check if on ccanada
+if 'lustre' in os.getcwd():
+    ccanada = 1
     bidsout = '/lustre04/scratch/mpcoll/2023_embcp'
 else:
+    ccanada = 0
     bidsout = '/Users/mp/data/2023_embcp'
+
 derivpath = opj(bidsout, 'derivatives')
 if not os.path.exists(opj(derivpath, 'machinelearning')):
     os.mkdir(opj(derivpath, 'machinelearning'))
