@@ -186,7 +186,7 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 optimizer__weight_decay=weight_decay,
                 batch_size=batch_size,
                 callbacks=[
-                    "balanced_accuracy_score",
+                    "balanced_accuracy",
                     ("lr_scheduler", LRScheduler(policy=ReduceLROnPlateau)),
                     ("early_stopping", EarlyStopping(patience=10)),
                 ],
