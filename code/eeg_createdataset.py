@@ -95,7 +95,7 @@ def compute_covs_epoch(epoch, frequency_bands, baseline=(None, None)):
     return np.expand_dims(epoch_cov, 0)
 
 
-covs = Parallel(n_jobs=10,
+covs = Parallel(n_jobs=njobs,
                 verbose=0)(delayed(compute_covs_epoch)(epoch=all_epochs[i],
                                                        frequency_bands=frequency_bands)
                            for i in tqdm(range(len(all_epochs))))
