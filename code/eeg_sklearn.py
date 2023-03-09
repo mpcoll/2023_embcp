@@ -28,13 +28,14 @@ from braindecode.datasets import create_from_X_y
 from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
-from skorch.callbacks import LRScheduler
+from skorch.callbacks import LRScheduler, EarlyStopping
 from skorch.helper import SliceDataset, predefined_split
 from skorch.dataset import Dataset
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (balanced_accuracy_score, mean_absolute_error,
                              confusion_matrix)
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import KFold, GroupKFold, LeaveOneGroupOut, GroupShuffleSplit
 from sklearn.base import clone
 import faulthandler
@@ -167,8 +168,8 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 callbacks=[
                     "neg_root_mean_squared_error",
                     # seems n_epochs -1 leads to desired behavior of lr=0 after end of training?
-                    ("lr_scheduler", LRScheduler(
-                        'CosineAnnealingLR', T_max=n_epochs - 1)),
+                    ("lr_scheduler", LRScheduler(policy=ReduceLROnPlateau)),
+                    ("early_stopping", EarlyStopping(patience=10)),
                 ],
                 device=device,
             )
@@ -185,10 +186,9 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 optimizer__weight_decay=weight_decay,
                 batch_size=batch_size,
                 callbacks=[
-                    "accuracy",
-                    # seems n_epochs -1 leads to desired behavior of lr=0 after end of training?
-                    ("lr_scheduler", LRScheduler(
-                        'CosineAnnealingLR', T_max=n_epochs - 1)),
+                    "balanced_accuracy_score",
+                    ("lr_scheduler", LRScheduler(policy=ReduceLROnPlateau)),
+                    ("early_stopping", EarlyStopping(patience=10)),
                 ],
                 device=device,
             )
