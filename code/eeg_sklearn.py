@@ -29,12 +29,13 @@ from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
 from skorch.callbacks import LRScheduler
-from skorch.helper import SliceDataset
+from skorch.helper import SliceDataset, predefined_split
+from skorch.dataset import Dataset
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (balanced_accuracy_score, mean_absolute_error,
                              confusion_matrix)
-from sklearn.model_selection import KFold, GroupKFold, LeaveOneGroupOut
+from sklearn.model_selection import KFold, GroupKFold, LeaveOneGroupOut, GroupShuffleSplit
 from sklearn.base import clone
 import faulthandler
 from tqdm import tqdm
@@ -43,7 +44,7 @@ import os
 
 faulthandler.enable()
 
-ccanada = 1
+ccanada = 0
 if ccanada:
     bidsout = '/lustre04/scratch/mpcoll/2023_embcp'
 else:
@@ -79,6 +80,7 @@ if cuda:  # If GPU
     print('Using ' + str(n_gpus) + ' GPUs')
 else:
     device = 'cpu'
+    n_gpus = 0
 
 # For macbook M1, use MPS backend
 if torch.backends.mps.is_available():
@@ -86,14 +88,14 @@ if torch.backends.mps.is_available():
     device = 'mps'
 
 # Set seed
-seed = 20200220
+seed = 42
 set_random_seeds(seed=seed, cuda=cuda)
 
 # Get data info
 n_chans = dataset.get_data().shape[1]
 input_window_samples = dataset.get_data().shape[2]
 
-batch_size = 128
+batch_size = 32
 n_epochs = 10
 
 model = 'braindecode_shallow'
@@ -102,7 +104,7 @@ model = 'braindecode_shallow'
 def initiate_clf(model, n_classes, n_chans=n_chans,
                  input_window_samples=input_window_samples,
                  batch_size=batch_size, device=device,
-                 braindecode=True):
+                 braindecode=True, proportion_valid=.2):
     """_summary_
 
     Args:
@@ -119,7 +121,7 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
     """
 
     if braindecode:
-        if model == 'braindecode_shallow':
+        if model == 'braindecode_deep':
             lr = 0.01
             weight_decay = 0.0005
             # Model
@@ -156,7 +158,7 @@ def initiate_clf(model, n_classes, n_chans=n_chans,
                 model,
                 optimizer=torch.optim.AdamW,
                 optimizer__lr=lr,
-                train_split=None,
+                train_split=group_train_valid_split,
                 optimizer__weight_decay=weight_decay,
                 batch_size=batch_size,
                 callbacks=[
@@ -282,8 +284,16 @@ def KFold_train(windows_dataset, clf, n_epochs=4, n_splits=5,
     return fold_accuracy, y_train, y_pred
 
 
+def group_train_valid_split(X, y, groups, proportion_valid=0.2):
+    splitter = GroupShuffleSplit(
+        test_size=proportion_valid, n_splits=2, random_state=42)
+    split = splitter.split(X, groups=groups)
+    train_inds, valid_inds = next(split)
+    return (X[train_inds], y[train_inds]), (X[valid_inds], y[valid_inds])
+
+
 def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
-                     n_classes=2):
+                     n_classes=2, valid_prop=0.2):
     """_summary_
 
     Args:
@@ -318,9 +328,19 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
         # Copy untrained model
         clf_fold = clone(clf)
 
-        # Get data
+        # Split train and test
         X_train_fold, X_test = X[train_index], X[test_index]
         y_train_fold, y_test = y[train_index], y[test_index]
+
+        # If validation set, futrher split train set
+        if valid_prop != 0:
+            train, valid = group_train_valid_split(X, y, participant_id,
+                                                   valid_prop)
+
+            X_train_fold, y_train_fold = train
+            valid_set = Dataset(valid[0], valid[1])
+            clf.set_params(
+                **{'deeplearn__train_split': predefined_split(valid_set)})
 
         # Fit
         if n_epochs != 0:
@@ -516,19 +536,20 @@ dataset_class = dataset[keep]
 targets = np.array([0 if 'thermal' in l else 1 for l in
                     dataset_class.metadata['task'].values])
 
+participant_id = dataset_class.metadata['participant_id'].values
 
 n_classes = len(np.unique(targets))
 
-print(np.unique(targets))
 
-participant_id = dataset_class.metadata['participant_id'].values
 clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True)
+
 
 fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=targets,
                                                   participant_id=participant_id,
                                                   clf=clf,
                                                   n_splits=10,
+                                                  valid_prop=0.2,
                                                   n_classes=n_classes,
                                                   n_epochs=20)
 
@@ -552,6 +573,7 @@ keep = [True if e in ['thermalrate', 'thermal',
         else False for e in dataset.metadata['task']]
 
 dataset_class = dataset[keep]
+dataset = None  # Free memory
 
 le = LabelEncoder()
 targets = le.fit_transform(
