@@ -13,6 +13,8 @@ from scipy.signal import savgol_filter
 from autoreject import AutoReject
 import multiprocessing
 from tqdm import tqdm
+import coffeine
+from joblib import Parallel, delayed
 
 njobs = multiprocessing.cpu_count()
 print(njobs)
@@ -38,8 +40,6 @@ for task in tqdm(['auditory', 'auditoryrate', 'thermal', 'thermalrate', 'rest'])
         raw = mne.io.read_raw_fif(opj(derivpath, p,  'eeg', p
                                       + "_task-painaudio_" + task + "_start"
                                         + "_cleanedeeg-raw.fif"), preload=True)
-
-        raw.resample(250)
 
         epochs = mne.make_fixed_length_epochs(
             raw, duration=4, overlap=0).load_data()
@@ -72,6 +72,37 @@ for task in tqdm(['auditory', 'auditoryrate', 'thermal', 'thermalrate', 'rest'])
         # Add to list
         all_epochs.append(epochs_clean)
 
+
 # Save all epochs
 all_epochs = mne.concatenate_epochs(all_epochs)
+
+# Calculate covariances
+frequency_bands = {
+    "alpha": (8.0, 15.0),
+    "beta_low": (15.0, 30.0),
+    "beta_high": (30.0, 45.0),
+    "gamma_low": (45.0, 65.0),
+    "gamma_high": (65.0, 100.0)}
+
+
+def compute_covs_epoch(epoch, frequency_bands, baseline=(None, None)):
+    if baseline:
+        epoch = epoch.apply_baseline(baseline)
+    mne.set_log_level('WARNING')
+
+    epoch_cov = coffeine.power_features._compute_covs_epochs(
+        epoch.apply_baseline((None, None)), frequency_bands)
+    return np.expand_dims(epoch_cov, 0)
+
+
+covs = Parallel(n_jobs=10,
+                verbose=0)(delayed(compute_covs_epoch)(epoch=all_epochs[i],
+                                                       frequency_bands=frequency_bands)
+                           for i in tqdm(range(len(all_epochs))))
+
+covs = np.vstack(covs)
+np.save(opj(derivpath, 'all_epochs-covs.npy'), covs)
+
+# Downsample and save epochs
+all_epochs.resample(250)
 all_epochs.save(opj(derivpath, 'all_epochs-epo.fif'), overwrite=True)

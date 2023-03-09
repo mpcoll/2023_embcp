@@ -44,6 +44,7 @@ import faulthandler
 from tqdm import tqdm
 
 import os
+import coffeine
 
 faulthandler.enable()
 
@@ -69,6 +70,67 @@ mne.set_log_level('WARNING')
 ####################################################
 print('Loading data...')
 dataset = mne.read_epochs(opj(derivpath, 'all_epochs-epo.fif'))
+
+
+frequency_bands = {
+    "low": (0.1, 1),
+    "delta": (1, 4),
+    "theta": (4.0, 8.0),
+    "alpha": (8.0, 15.0),
+    "beta_low": (15.0, 30.0),
+    "beta_high": (30.0, 45.0),
+    "gamma_low": (45.0, 65.0),
+    "gamma_high": (65.0, 100.0)}
+
+
+dataset_cov = []
+for i in tqdm(range(len(dataset))):
+    epoch_cv = coffeine.power_features._compute_covs_epochs(
+        dataset[i].apply_baseline((None, None)), frequency_bands)
+    dataset_cov.append(np.expand_dims(epoch_cv, 0))
+
+dataset_cov = np.vstack(dataset_cov)
+
+X = pd.DataFrame({band: list(dataset_cov[:, ii])
+                 for ii, band in enumerate(frequency_bands)})
+filter_bank_transformer = coffeine.make_filter_bank_transformer(
+    names=list(frequency_bands),
+    method='riemann',
+    projection_params=dict(scale='auto', n_compo=rank)
+)
+model = make_pipeline(
+    filter_bank_transformer, StandardScaler(),
+    RidgeCV(alphas=np.logspace(-5, 10, 100)))
+
+
+dataset_cov = np.vstack(dataset_cov)
+test = coffeine.power_features._compute_covs_epochs(
+    dataset_test, frequency_bands)
+
+features, meta_info = coffeine.compute_features(
+    dataset_test, features=('covs',), n_fft=1024, n_overlap=512,
+    fs=dataset.info['sfreq'], fmax=100, frequency_bands=frequency_bands)
+
+
+freq_bands = {'alpha': (8.0, 15.0), 'beta': (15.0, 30.0)}
+n_freq_bands = len(freq_bands)
+n_subjects = 10
+n_channels = 4
+X_cov = np.random.randn(n_subjects, n_freq_bands, n_channels, n_channels)
+for sub in range(n_subjects):
+    for fb in range(n_freq_bands):
+        X_cov[sub, fb] = X_cov[sub, fb] @ X_cov[sub, fb].T
+X_df = pd.DataFrame(
+    {band: list(X_cov[:, ii]) for ii, band in enumerate(freq_bands)})
+
+
+# Models
+fb_model = coffeine.make_filter_bank_classifier(names=frequency_bands.keys(),
+                                                method='riemann')
+fb_model.fit(X_df, y)
+
+
+test
 # print('Filtering...')
 # dataset.filter(4, 59)
 
@@ -642,7 +704,7 @@ targets = le.fit_transform(
 n_classes = len(np.unique(targets))
 participant_id = dataset_class.metadata['participant_id'].values
 clf = initiate_clf('braindecode_shallow', n_classes,
-                   braindecode=True, early_stop=35, )
+                   braindecode=True, early_stop=35)
 
 fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=targets,
