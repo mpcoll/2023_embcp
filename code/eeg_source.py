@@ -169,13 +169,13 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
             betas_rate = Parallel(n_jobs=njobs,
                                   verbose=0)(delayed(regressor)(data=stc.data,
                                                                 Y=rating,
-                                                                method=HuberRegressor(),
+                                                                method=HuberRegressor(epsilon=1.2),
                                                                 dipole=dipole,)
                                              for dipole in tqdm(range(stc.data.shape[0])))
 
             betas_intensity = Parallel(n_jobs=njobs, verbose=0)(delayed(regressor)(data=stc.data,
                                                                                    Y=intensity,
-                                                                                   method=HuberRegressor(),
+                                                                                   method=HuberRegressor(epsilon=1.2),
                                                                                    dipole=dipole,)
                                                                 for dipole in tqdm(range(stc.data.shape[0])))
             # betas_rate2 = np.zeros(stc.data.shape[0])
