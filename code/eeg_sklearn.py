@@ -553,7 +553,7 @@ fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=targets,
                                                   participant_id=participant_id,
                                                   clf=clf,
-                                                  n_splits=10,
+                                                  n_splits=5,
                                                   valid_prop=0.2,
                                                   n_classes=n_classes,
                                                   n_epochs=20)
