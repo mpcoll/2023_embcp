@@ -10,7 +10,7 @@ from sklearn.linear_model import HuberRegressor, LinearRegression
 from scipy.stats import zscore
 from joblib import Parallel, delayed
 import multiprocessing
-
+q
 njobs = multiprocessing.cpu_count()
 # %matplotlib qt5
 
@@ -115,7 +115,12 @@ def regressor(data, dipole, Y, method, zscoreY=False, zscoreX=True):
     if zscoreY:
         Y = zscore(Y)
     # Return the weights and stats
-    return method.fit(X, Y).coef_[0]
+    try:
+        out =  method.fit(X, Y).coef_[0]
+    except: # IF no convergence lower epsilon
+        method.set_params(epsilon=1.1)
+        out =  method.fit(X, Y).coef_[0]
+    return out
 
 
 # TODO change loop to avoid doing mutliple times the same thing
@@ -166,17 +171,19 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
 
             # regress with ratings and get betas
 
+
             betas_rate = Parallel(n_jobs=njobs,
                                   verbose=0)(delayed(regressor)(data=stc.data,
                                                                 Y=rating,
-                                                                method=HuberRegressor(epsilon=1.2),
+                                                                method=HuberRegressor(),
                                                                 dipole=dipole,)
                                              for dipole in tqdm(range(stc.data.shape[0])))
 
-            betas_intensity = Parallel(n_jobs=njobs, verbose=0)(delayed(regressor)(data=stc.data,
-                                                                                   Y=intensity,
-                                                                                   method=HuberRegressor(epsilon=1.2),
-                                                                                   dipole=dipole,)
+            betas_intensity = Parallel(n_jobs=njobs,
+                                       verbose=0)(delayed(regressor)(data=stc.data,
+                                                                     Y=intensity,
+                                                                     method=HuberRegressor(),
+                                                                     dipole=dipole,)
                                                                 for dipole in tqdm(range(stc.data.shape[0])))
             # betas_rate2 = np.zeros(stc.data.shape[0])
             # for dipole in tqdm(range(stc.data.shape[0])):
