@@ -45,7 +45,7 @@ import faulthandler
 from tqdm import tqdm
 
 import os
-import coffeine
+# import coffeine
 
 faulthandler.enable()
 
@@ -72,10 +72,10 @@ mne.set_log_level('WARNING')
 print('Loading data...')
 dataset = mne.read_epochs(opj(derivpath, 'all_epochs-epo.fif'))
 
-debug = 0
-if debug:
-    # If debug, keep only 10 participants
-    dataset = dataset[]
+# debug = 0
+# if debug:
+#     # If debug, keep only 10 participants
+#     dataset = dataset[]
 
 
 ####################################################
