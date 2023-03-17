@@ -96,8 +96,7 @@ else:
     device = 'cpu'
     n_gpus = 0
 
-device = 'cpu'
-n_gpus = 0
+
 # For macbook M1, use MPS backend
 if torch.backends.mps.is_available():
     print("Using MPS")
