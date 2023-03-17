@@ -10,7 +10,7 @@ from sklearn.linear_model import HuberRegressor, LinearRegression
 from scipy.stats import zscore
 from joblib import Parallel, delayed
 import multiprocessing
-q
+
 njobs = multiprocessing.cpu_count()
 # %matplotlib qt5
 
@@ -228,7 +228,7 @@ for task in ['auditory', 'auditoryrate', 'thermal', 'thermalrate']:
             opj(derivpath, 'source', 'pvals_rate_' + task + '_' + name + '.fif'), overwrite=True)
 
 
-
+stophere
 # TODO loop over tasks and create figures
 # # Plot betas
 # test.plot(**kwargs)
@@ -242,13 +242,13 @@ kwargs = dict(subject='fsaverage',
 stct = mne.read_source_estimate(
      opj(derivpath, 'source', 'tvals_intens_thermal_gamma.fif'))
 
- np.max(np.abs(stct.data))
- stcp = mne.read_source_estimate(
-     opj(derivpath, 'source', 'pvals_intens_thermal_alpha.fif'))
+np.max(np.abs(stct.data))
+stcp = mne.read_source_estimate(
+    opj(derivpath, 'source', 'pvals_intens_thermal_alpha.fif'))
 
- stct.data[stcp.data > 0.05] = 0
+stct.data[stcp.data > 0.05] = 0
 # # # save betas / append for group analysis
- stct.plot(**kwargs)
+stct.plot(**kwargs)
 # test = mne.SourceEstimate(np.mean(betas_intens_out, 0).squeeze(), stc.vertices, 0, 0)
 # # # t-test betas
 # # # save t-vals
