@@ -164,7 +164,7 @@ def initiate_clf(model_name, n_classes, n_chans=n_chans,
             )
         # If multiple GPUs, split
         if n_gpus > 1:
-            model = torch.nn.DataParallel(model)
+            model = torch.nn.parallel.DistributedDataParallell(model)
 
         if augmentation:
             fts = FTSurrogate(0.5, phase_noise_magnitude=1, channel_indep=False,
