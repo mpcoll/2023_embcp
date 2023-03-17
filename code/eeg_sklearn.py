@@ -613,133 +613,134 @@ all_accuracies = pd.DataFrame(
 # # Between classification for thermal vs auditory
 # ####################################################
 
-# Keep only task with 4 active tasks
-keep = [True if e in ['thermalrate', 'thermal',
-                      'auditory', 'auditoryrate']
-        else False for e in dataset.metadata['task']]
+# # Keep only task with 4 active tasks
+# keep = [True if e in ['thermalrate', 'thermal',
+#                       'auditory', 'auditoryrate']
+#         else False for e in dataset.metadata['task']]
 
-dataset_class = dataset[keep]
+# dataset_class = dataset[keep]
 
-targets = np.array([0 if 'thermal' in l else 1 for l in
-                    dataset_class.metadata['task'].values])
+# targets = np.array([0 if 'thermal' in l else 1 for l in
+#                     dataset_class.metadata['task'].values])
 
-participant_id = dataset_class.metadata['participant_id'].values
+# participant_id = dataset_class.metadata['participant_id'].values
 
-n_classes = len(np.unique(targets))
+# n_classes = len(np.unique(targets))
 
-path_out = opj(derivpath, 'machinelearning', 'between_4tasks')
+# path_out = opj(derivpath, 'machinelearning', 'between_4tasks')
 
 
-clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True,
-                   path_out=path_out, early_stop_n=20, augmentation=False)
+# clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True,
+#                    path_out=path_out, early_stop_n=20, augmentation=False)
 
-fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
-                                                  y=targets,
-                                                  participant_id=participant_id,
-                                                  clf=clf,
-                                                  n_splits=10,
-                                                  valid_prop=0.2,
-                                                  n_classes=n_classes,
-                                                  n_epochs=35)
+# fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
+#                                                   y=targets,
+#                                                   participant_id=participant_id,
+#                                                   clf=clf,
+#                                                   n_splits=10,
+#                                                   valid_prop=0.2,
+#                                                   n_classes=n_classes,
+#                                                   n_epochs=35)
 
-# Make confusion matrix
-confusion_mat = confusion_matrix(y_train, y_pred)
+# # Make confusion matrix
+# confusion_mat = confusion_matrix(y_train, y_pred)
 
-plot_confusion_matrix(confusion_mat, figsize=(10, 10),
-                      class_names=le.classes_)
-plt.tick_params(axis='x', rotation=90)
-plt.tick_params(axis='y', rotation=0)
-plt.show()
+# plot_confusion_matrix(confusion_mat, figsize=(10, 10),
+#                       class_names=le.classes_)
+# plt.tick_params(axis='x', rotation=90)
+# plt.tick_params(axis='y', rotation=0)
+# plt.show()
 
 
 # ####################################################
 # # Between classification for 4 active tasks
 # ####################################################
 
-# Keep only task with 4 active tasks
-keep = [True if e in ['thermalrate', 'thermal',
-                      'auditory', 'auditoryrate']
-        else False for e in dataset.metadata['task']]
+# # Keep only task with 4 active tasks
+# keep = [True if e in ['thermalrate', 'thermal',
+#                       'auditory', 'auditoryrate']
+#         else False for e in dataset.metadata['task']]
 
-dataset_class = dataset[keep]
+# dataset_class = dataset[keep]
 
-le = LabelEncoder()
-targets = le.fit_transform(
-    list(dataset_class.metadata['task'].values))
+# le = LabelEncoder()
+# targets = le.fit_transform(
+#     list(dataset_class.metadata['task'].values))
 
-n_classes = len(np.unique(targets))
-participant_id = dataset_class.metadata['participant_id'].values
-clf = initiate_clf('braindecode_shallow', n_classes,
-                   braindecode=True, early_stop=35)
+# n_classes = len(np.unique(targets))
+# participant_id = dataset_class.metadata['participant_id'].values
+# clf = initiate_clf('braindecode_shallow', n_classes,
+#                    braindecode=True, early_stop=35)
 
 
-clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True,
-                   path_out=path_out, early_stop_n=20, augmentation=False)
+# clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True,
+#                    path_out=path_out, early_stop_n=20, augmentation=False)
 
-fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
-                                                  y=targets,
-                                                  participant_id=participant_id,
-                                                  clf=clf,
-                                                  n_splits=2,
-                                                  n_classes=n_classes,
-                                                  n_epochs=35)
+# fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
+#                                                   y=targets,
+#                                                   participant_id=participant_id,
+#                                                   clf=clf,
+#                                                   n_splits=2,
+#                                                   n_classes=n_classes,
+#                                                   n_epochs=35)
 
-# Make confusion matrix
-confusion_mat = confusion_matrix(y_train, y_pred)
+# # Make confusion matrix
+# confusion_mat = confusion_matrix(y_train, y_pred)
 
-plot_confusion_matrix(confusion_mat, figsize=(10, 10),
-                      class_names=le.classes_)
-plt.tick_params(axis='x', rotation=90)
-plt.tick_params(axis='y', rotation=0)
-plt.show()
+# plot_confusion_matrix(confusion_mat, figsize=(10, 10),
+#                       class_names=le.classes_)
+# plt.tick_params(axis='x', rotation=90)
+# plt.tick_params(axis='y', rotation=0)
+# plt.show()
 
 
 # ######################################################################
 # # Between classification for 4 active tasks with frequency bands
 # #######################################################################
 
-frequency_bands = {
-    "alpha": (8.0, 15.0),
-    "beta_low": (15.0, 30.0),
-    "beta_high": (30.0, 45.0),
-    "gamma_low": (45.0, 65.0),
-    "gamma_high": (65.0, 100.0)}
+# frequency_bands = {
+#     "alpha": (8.0, 15.0),
+#     "beta_low": (15.0, 30.0),
+#     "beta_high": (30.0, 45.0),
+#     "gamma_low": (45.0, 65.0),
+#     "gamma_high": (65.0, 100.0)}
 
-# Keep only task with 4 active tasks
-keep = [True if e in ['thermalrate', 'thermal',
-                      'auditory', 'auditoryrate']
-        else False for e in dataset.metadata['task']]
+# # Keep only task with 4 active tasks
+# keep = [True if e in ['thermalrate', 'thermal',
+#                       'auditory', 'auditoryrate']
+#         else False for e in dataset.metadata['task']]
 
 
-le = LabelEncoder()
-targets = le.fit_transform(
-    list(dataset_class.metadata['task'].values))
+# le = LabelEncoder()
+# targets = le.fit_transform(
+#     list(dataset_class.metadata['task'].values))
 
-n_classes = len(np.unique(targets))
-participant_id = dataset_class.metadata['participant_id'].values
+# n_classes = len(np.unique(targets))
+# participant_id = dataset_class.metadata['participant_id'].values
 
-covs = np.load(opj(derivpath, 'all_epochs-covs.npy'))
-covs = covs[keep, ::]
-cov_data = pd.DataFrame({band: list(covs[:, ii]) for ii, band in
-                         enumerate(list(frequency_bands.keys()))})
+# covs = np.load(opj(derivpath, 'all_epochs-covs.npy'))
+# covs = covs[keep, ::]
+# cov_data = pd.DataFrame({band: list(covs[:, ii]) for ii, band in
+#                          enumerate(list(frequency_bands.keys()))})
 
-clf = initiate_clf('filterbank_SVM', 4, braindecode=False,
-                   path_out=path_out)
+# clf = initiate_clf('filterbank_SVM', 4, braindecode=False,
+#                    path_out=path_out)
 
-fold_accuracy, y_train, y_pred = GroupKfold_train(X=cov_data,
-                                                  y=targets,
-                                                  participant_id=participant_id,
-                                                  clf=clf,
-                                                  valid_prop=0,
-                                                  n_splits=10,
-                                                  n_classes=4,
-                                                  n_epochs=0,
-                                                  filterbank=True)
+# fold_accuracy, y_train, y_pred = GroupKfold_train(X=cov_data,
+#                                                   y=targets,
+#                                                   participant_id=participant_id,
+#                                                   clf=clf,
+#                                                   valid_prop=0,
+#                                                   n_splits=10,
+#                                                   n_classes=4,
+#                                                   n_epochs=0,
+#                                                   filterbank=True)
 
 
 ####################################################
 # Between regression for thermal intensity
 ####################################################
+path_out = opj(derivpath, 'machinelearning', 'thermal_intensity_regression')
 
 # Keep only tasks with fixed intesity
 keep = [True if e in ['thermal', 'thermalrate']
