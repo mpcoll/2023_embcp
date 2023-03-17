@@ -37,7 +37,7 @@ from skorch.dataset import Dataset
 
 from sklearn.preprocessing import LabelEncoder, RobustScaler, StandardScaler
 from sklearn.metrics import (balanced_accuracy_score, mean_absolute_error,
-                             confusion_matrix)
+                             confusion_matrix, r2_score)
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import KFold, GroupKFold, LeaveOneGroupOut, GroupShuffleSplit, train_test_split
 from sklearn.base import clone
@@ -46,6 +46,9 @@ from tqdm import tqdm
 
 import os
 # import coffeine
+
+# TODO Loop all algorithms
+# TODO plots (confusion matrix, regression vs real, training vs validation)
 
 faulthandler.enable()
 
@@ -460,9 +463,10 @@ def Kfold_train(X, y, clf, n_epochs=4, n_splits=1,
 
 
 # Collect all accuracies in a dataframe
-all_accuracies = pd.DataFrame(
+all_accuracies_within = pd.DataFrame(
     index=dataset.metadata['participant_id'].unique())
 
+all_accuracies_between = pd.DataFrame()
 # ####################################################
 # # Within classification for all tasks
 # ####################################################
@@ -763,16 +767,23 @@ fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=np.expand_dims(targets, 1),
                                                   participant_id=participant_id,
                                                   clf=clf,
-                                                  n_splits=5,
+                                                  n_splits=2,
                                                   n_classes=1,
-                                                  n_epochs=35)
+                                                  n_epochs=2)
 
 
-sns.regplot(x=y_train, y=y_pred)
-plt.figure()
-plt.plot(y_train, label='true')
-plt.plot(y_pred, label='pred')
+# dataset_class.metadata['y_train'] = y_train
+# dataset_class.metadata['y_pred'] = y_pred
+
+# dat_plot = []
+# for p in np.unique(participant_id):
+#     datsub = dataset_class.metadata[dataset_class.metadata['participant_id'] == p]
+#     datsub['epoch_number'] = np.arange(len(datsub))
+#     dat_plot.append(datsub)
+# dat_plot = pd.concat(dat_plot)
 
 
-all_accuracies.loc['between_regression_intensity'] = np.mean(
+all_accuracies_between.loc[0, 'DLshallow_between_regression_intensity_meanMAE'] = np.mean(
     fold_accuracy)
+all_accuracies_between.loc[0, 'DLshallow_between_regression_intensity_r2all'] = r2_score(
+    y_train, y_pred)

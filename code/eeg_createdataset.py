@@ -63,6 +63,7 @@ for task in tqdm(['auditory', 'auditoryrate', 'thermal', 'thermalrate', 'rest'])
         meta_data = pd.DataFrame({'participant_id': p,
                                   'task': task,
                                   'rating': rating,
+                                  'epoch_num': np.arange(len(epochs_clean)),
                                   'intensity': intensity,
                                   'diff_rate': diff_rate,
                                   'diff_intensity': diff_stim,
