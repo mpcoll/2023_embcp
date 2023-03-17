@@ -9,6 +9,7 @@ from sklearn.model_selection import KFold
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 from sklearn.svm import SVC
+from sklearn.naive_bayes import GaussianNB
 from mne.datasets import sample
 from mne import io
 from pyriemann.tangentspace import TangentSpace
@@ -34,7 +35,7 @@ from skorch.callbacks import LRScheduler, EarlyStopping, Checkpoint
 from skorch.helper import SliceDataset, predefined_split
 from skorch.dataset import Dataset
 
-from sklearn.preprocessing import LabelEncoder, RobustScaler
+from sklearn.preprocessing import LabelEncoder, RobustScaler, StandardScaler
 from sklearn.metrics import (balanced_accuracy_score, mean_absolute_error,
                              confusion_matrix)
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -257,6 +258,23 @@ def initiate_clf(model_name, n_classes, n_chans=n_chans,
                 PCA(n_components=0.8),
                 SVC(),
             )
+        elif model_name == 'filterbank_SVM':
+            frequency_bands = {
+                "alpha": (8.0, 15.0),
+                "beta_low": (15.0, 30.0),
+                "beta_high": (30.0, 45.0),
+                "gamma_low": (45.0, 65.0),
+                "gamma_high": (65.0, 100.0)}
+
+            filter_bank_transformer = coffeine.make_filter_bank_transformer(
+                names=list(frequency_bands.keys()),
+                method='riemann',
+                projection_params=dict(scale='auto', n_compo=64)
+            )
+            clf = make_pipeline(filter_bank_transformer,
+                                StandardScaler(),
+                                GaussianNB()
+                                )
 
     return clf
 
@@ -270,7 +288,8 @@ def group_train_valid_split(X, y, groups, proportion_valid=0.2):
 
 
 def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
-                     n_classes=2, valid_prop=0.2, scaling_factor=1e6,):
+                     n_classes=2, valid_prop=0.2, scaling_factor=1e6,
+                     filterbank=False):
     """_summary_
 
     Args:
@@ -308,8 +327,13 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
         clf_fold = clone(clf)
 
         # Split train and test
-        X_train_fold, X_test = X[train_index], X[test_index]
-        y_train_fold, y_test = y[train_index], y[test_index]
+        if filterbank:
+            X_train_fold, X_test = X.iloc[train_index], X.iloc[test_index]
+            y_train_fold, y_test = y[train_index], y[test_index]
+
+        else:
+            X_train_fold, X_test = X[train_index], X[test_index]
+            y_train_fold, y_test = y[train_index], y[test_index]
 
         # If validation set, futrher split train set
         if valid_prop != 0:
@@ -633,7 +657,6 @@ keep = [True if e in ['thermalrate', 'thermal',
         else False for e in dataset.metadata['task']]
 
 dataset_class = dataset[keep]
-dataset = None  # Free memory
 
 le = LabelEncoder()
 targets = le.fit_transform(
@@ -643,6 +666,10 @@ n_classes = len(np.unique(targets))
 participant_id = dataset_class.metadata['participant_id'].values
 clf = initiate_clf('braindecode_shallow', n_classes,
                    braindecode=True, early_stop=35)
+
+
+clf = initiate_clf('braindecode_shallow', n_classes, braindecode=True,
+                   path_out=path_out, early_stop_n=20, augmentation=False)
 
 fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
                                                   y=targets,
@@ -660,6 +687,52 @@ plot_confusion_matrix(confusion_mat, figsize=(10, 10),
 plt.tick_params(axis='x', rotation=90)
 plt.tick_params(axis='y', rotation=0)
 plt.show()
+
+
+
+# ######################################################################
+# # Between classification for 4 active tasks with frequency bands
+# #######################################################################
+
+frequency_bands = {
+    "alpha": (8.0, 15.0),
+    "beta_low": (15.0, 30.0),
+    "beta_high": (30.0, 45.0),
+    "gamma_low": (45.0, 65.0),
+    "gamma_high": (65.0, 100.0)}
+
+
+
+# Keep only task with 4 active tasks
+keep = [True if e in ['thermalrate', 'thermal',
+                      'auditory', 'auditoryrate']
+        else False for e in dataset.metadata['task']]
+
+
+le = LabelEncoder()
+targets = le.fit_transform(
+    list(dataset_class.metadata['task'].values))
+
+n_classes = len(np.unique(targets))
+participant_id = dataset_class.metadata['participant_id'].values
+
+covs = np.load(opj(derivpath, 'all_epochs-covs.npy'))
+covs = covs[keep, ::]
+cov_data = pd.DataFrame({band: list(covs[:, ii]) for ii, band in
+                         enumerate(list(frequency_bands.keys()))})
+
+clf = initiate_clf('filterbank_SVM', 4, braindecode=False,
+                   path_out=path_out)
+
+fold_accuracy, y_train, y_pred = GroupKfold_train(X=cov_data,
+                                                  y=targets,
+                                                  participant_id=participant_id,
+                                                  clf=clf,
+                                                  valid_prop=0,
+                                                  n_splits=10,
+                                                  n_classes=4,
+                                                  n_epochs=0,
+                                                  filterbank=True)
 
 
 # ####################################################
