@@ -759,7 +759,7 @@ clf = initiate_clf('braindecode_shallow', n_classes=1, braindecode=True,
                    path_out=path_out, early_stop_n=20, augmentation=False)
 
 fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
-                                                  y=np.expand_dims(targets, 0),
+                                                  y=targets,
                                                   participant_id=participant_id,
                                                   clf=clf,
                                                   n_splits=5,
