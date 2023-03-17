@@ -72,6 +72,11 @@ mne.set_log_level('WARNING')
 print('Loading data...')
 dataset = mne.read_epochs(opj(derivpath, 'all_epochs-epo.fif'))
 
+debug = 0
+if debug:
+    # If debug, keep only 10 participants
+    dataset = dataset[]
+
 
 ####################################################
 # set up model and parameters
@@ -182,7 +187,7 @@ def initiate_clf(model_name, n_classes, n_chans=n_chans,
                 model,
                 optimizer=torch.optim.AdamW,
                 iterator_train=iterator_train,
-                iterator_train__transforms=transforms,
+                # iterator_train__transforms=transforms, # TODO check why not working
                 optimizer__lr=lr,
                 train_split=group_train_valid_split,
                 optimizer__weight_decay=weight_decay,
@@ -366,11 +371,11 @@ def GroupKfold_train(X, y, participant_id, clf, n_epochs=4, n_splits=1,
             fold_accuracy.append(balanced_accuracy_score(
                 y_test, y_pred[test_index]))
             print('fold accuracy: ', fold_accuracy[-1])
-
-            valid_pred = clf_fold.predict(valid[0])
-            print(valid_pred)
-            valid_acc = balanced_accuracy_score(valid[1], valid_pred)
-            print(valid_acc)
+            if valid_prop != 0:
+                valid_pred = clf_fold.predict(valid[0])
+                print(valid_pred)
+                valid_acc = balanced_accuracy_score(valid[1], valid_pred)
+                print(valid_acc)
 
     return fold_accuracy, y, y_pred
 
@@ -689,7 +694,6 @@ plt.tick_params(axis='y', rotation=0)
 plt.show()
 
 
-
 # ######################################################################
 # # Between classification for 4 active tasks with frequency bands
 # #######################################################################
@@ -700,8 +704,6 @@ frequency_bands = {
     "beta_high": (30.0, 45.0),
     "gamma_low": (45.0, 65.0),
     "gamma_high": (65.0, 100.0)}
-
-
 
 # Keep only task with 4 active tasks
 keep = [True if e in ['thermalrate', 'thermal',
@@ -735,41 +737,40 @@ fold_accuracy, y_train, y_pred = GroupKfold_train(X=cov_data,
                                                   filterbank=True)
 
 
-# ####################################################
-# # Between regression for thermal intensity
-# ####################################################
+####################################################
+# Between regression for thermal intensity
+####################################################
 
-# # Keep only tasks with fixed intesity
-# keep = [True if e in ['thermal', 'thermalrate']
-#         else False for e in dataset.metadata['task']]
+# Keep only tasks with fixed intesity
+keep = [True if e in ['thermal', 'thermalrate']
+        else False for e in dataset.metadata['task']]
 
-# data_class = dataset[keep]
+dataset_class = dataset[keep]
 
-# data_class.metadata['target'] = data_class.metadata['intensity']
-# # windows_dataset = create_from_X_y(data_class,
-# #                                   y=data_class.metadata['target'],
-# #                                   sfreq=data_class.info['sfreq'],
-# #                                   ch_names=data_class.ch_names,
-# #                                   drop_last_window=False)
-# # windows_dataset.set_description(data_class.metadata, overwrite=True)
-
-# # n_classes = 1
-
-# # Initiate classifier
-# clf = initiate_clf(model, n_classes)
-
-# # Train and test
-# fold_accuracy, y_train, y_pred = GroupKfold_train(data_class.get_data(),
-#                                                   target=, clf,
-#                                                   n_splits='loo',
-#                                                   n_classes=1,
-#                                                   n_epochs=4)
-
-# sns.regplot(x=y_train, y=y_pred)
-# plt.figure()
-# plt.plot(y_train, label='true')
-# plt.plot(y_pred, label='pred')
+targets = np.asarray(dataset_class.metadata['intensity'])
 
 
-# all_accuracies.loc['between_regression_intensity'] = np.mean(
-#     fold_accuracy)
+# Initiate classifier
+participant_id = dataset_class.metadata['participant_id'].values
+
+
+clf = initiate_clf('braindecode_shallow', n_classes=1, braindecode=True,
+                   path_out=path_out, early_stop_n=20, augmentation=False)
+
+fold_accuracy, y_train, y_pred = GroupKfold_train(X=dataset_class.get_data(),
+                                                  y=np.expand_dims(targets, 1),
+                                                  participant_id=participant_id,
+                                                  clf=clf,
+                                                  n_splits=5,
+                                                  n_classes=1,
+                                                  n_epochs=35)
+
+
+sns.regplot(x=y_train, y=y_pred)
+plt.figure()
+plt.plot(y_train, label='true')
+plt.plot(y_pred, label='pred')
+
+
+all_accuracies.loc['between_regression_intensity'] = np.mean(
+    fold_accuracy)
